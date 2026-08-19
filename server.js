@@ -8,21 +8,32 @@ import { estructurarConOpenRouter } from './services/openrouter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
+const express = require('express');
+const path = require('path');
 const app = express();
 
-// Middlewares
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json());
 
-// Servir archivos estáticos
-app.use(express.static(__dirname));
+// Servir la carpeta public como estática
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Servir la vista principal
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+// Importar rutas de backend
+const apifyRoutes = require('./routes/apifyRoutes');
+const openRouterRoutes = require('./routes/openRouterRoutes');
+
+// Registrar endpoints de API
+app.use('/api/apify', apifyRoutes);
+app.use('/api/openrouter', openRouterRoutes);
+
+// Ruta principal para servir index.html
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Servidor activo en el puerto ${PORT}`);
+});
 // =========================================================
 // TRABAJOS EN SEGUNDO PLANO
 // El proxy de Hostinger corta peticiones que tardan mucho
