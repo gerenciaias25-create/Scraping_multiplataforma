@@ -3,6 +3,8 @@ import cors from 'cors';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { ejecutarScraping } from './services/apify.js';
+import { estructurarConOpenRouter } from './services/openrouter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,18 +57,17 @@ app.post('/api/analizar', (req, res) => {
     return res.status(400).json({ error: 'El parámetro "actor" es requerido.' });
   }
 
-  const APIFY_TOKEN = process.env.APIFY_API_TOKEN || process.env.APIFY_TOKEN;
-  const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
+  const APIFY_TOKEN = process.env.APIFY_TOKEN || process.env.APIFY_API_TOKEN;
+  const OPENROUTER_KEY = process.env.OPENROUTER_KEY || process.env.OPENROUTER_API_KEY;
 
   if (!OPENROUTER_KEY) {
-    return res.status(500).json({ error: 'Falta OPENROUTER_API_KEY en las variables de entorno.' });
+    return res.status(500).json({ error: 'Falta OPENROUTER_KEY en las variables de entorno.' });
   }
 
   const jobId = crypto.randomUUID();
   JOBS.set(jobId, { status: 'processing', progreso: 'Extrayendo fuentes en Apify...' });
 
-  // Se procesa en segundo plano; NO se espera (no "await") para
-  // poder responder al cliente de inmediato.
+  // Se procesa en segundo plano; NO se espera (no "await") para poder responder al cliente de inmediato.
   procesarAnalisis({ jobId, skill, actorName, actor2Name, mes, anio, APIFY_TOKEN, OPENROUTER_KEY });
 
   return res.status(202).json({ jobId });
@@ -87,7 +88,7 @@ async function procesarAnalisis({ jobId, skill, actorName, actor2Name, mes, anio
 
     JOBS.set(jobId, { status: 'processing', progreso: 'Extrayendo fuentes en Apify (X, Facebook, Instagram, TikTok, YouTube, prensa)...' });
 
-    // 1. Scraping masivo (6 fuentes en paralelo)
+    // 1. Scraping masivo (fuentes en paralelo)
     const [datosActor1, datosActor2] = await Promise.all([
       scrapeActor(actorName, APIFY_TOKEN),
       actor2Name ? scrapeActor(actor2Name, APIFY_TOKEN) : Promise.resolve(null),
@@ -97,8 +98,21 @@ async function procesarAnalisis({ jobId, skill, actorName, actor2Name, mes, anio
 
     // 2. Estructuración con OpenRouter
     const schema = SCHEMAS[skill] || SCHEMAS.radar;
-    const prompt = buildPrompt({ skill, actorName, actor2Name, mes, anio, datosActor1, datosActor2, schema });
-    const structured = await callOpenRouter(prompt, OPENROUTER_KEY);
+    
+    // Intentamos procesar primero mediante el servicio optimizado de OpenRouter
+    let structured;
+    try {
+      const rawPayload = {
+        actor1: datosActor1,
+        actor2: datosActor2,
+        periodo: `${mes} ${anio}`
+      };
+      structured = await estructurarConOpenRouter(skill, rawPayload);
+    } catch (openRouterErr) {
+      console.warn(`[!] Falló servicio OpenRouter directo, recurriendo a prompt legacy:`, openRouterErr.message);
+      const prompt = buildPrompt({ skill, actorName, actor2Name, mes, anio, datosActor1, datosActor2, schema });
+      structured = await callOpenRouter(prompt, OPENROUTER_KEY);
+    }
 
     // 3. Normalizar respuesta para asegurar que todos los arrays existan
     const normalized = normalizeResponse(structured, skill);
@@ -260,26 +274,12 @@ function normalizeResponse(data, skill) {
 }
 
 // =========================================================
-// APIFY: SCRAPING
+// APIFY: SCRAPING MODULARIZADO CON TIMEOUT AMPLIO
 // =========================================================
 
-async function llamarActorApify(actorPath, payload, token, timeoutMs = 35000) {
-  if (!token) return [];
+async function llamarActorApify(actorPath, payload) {
   try {
-    const url = `https://api.apify.com/v2/acts/${actorPath}/run-sync-get-dataset-items?token=${token}&timeout=${Math.round(timeoutMs / 1000)}`;
-    const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), timeoutMs);
-
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    clearTimeout(t);
-
-    if (!r.ok) return [];
-    const data = await r.json();
+    const data = await ejecutarScraping(actorPath, payload);
     return Array.isArray(data) ? data : [];
   } catch (e) {
     console.warn(`[!] Timeout o fallo en actor ${actorPath}:`, e.message);
@@ -289,35 +289,35 @@ async function llamarActorApify(actorPath, payload, token, timeoutMs = 35000) {
 
 async function scrapeActor(nombre, token) {
   const tareas = [
-    llamarActorApify('apify~google-search-scraper', {
+    llamarActorApify('apify/google-search-scraper', {
       queries: `"${nombre}" (noticias OR opinión OR declaraciones)`,
       resultsPerPage: 20,
-    }, token).then(i => tag(i, 'prensa')),
+    }).then(i => tag(i, 'prensa')),
 
-    llamarActorApify('apidojo~tweet-scraper', {
+    llamarActorApify('apidojo/tweet-scraper', {
       searchTerms: [nombre],
       maxItems: 30,
-    }, token).then(i => tag(i, 'twitter')),
+    }).then(i => tag(i, 'twitter')),
 
-    llamarActorApify('apify~facebook-posts-scraper', {
+    llamarActorApify('apify/facebook-posts-scraper', {
       search: nombre,
       resultsLimit: 20,
-    }, token).then(i => tag(i, 'facebook')),
+    }).then(i => tag(i, 'facebook')),
 
-    llamarActorApify('apify~instagram-scraper', {
+    llamarActorApify('apify/instagram-scraper', {
       search: nombre,
       resultsLimit: 15,
-    }, token).then(i => tag(i, 'instagram')),
+    }).then(i => tag(i, 'instagram')),
 
-    llamarActorApify('clockworks~tiktok-scraper', {
+    llamarActorApify('clockworks/tiktok-scraper', {
       searchQueries: [nombre],
       resultsPerPage: 15,
-    }, token).then(i => tag(i, 'tiktok')),
+    }).then(i => tag(i, 'tiktok')),
 
-    llamarActorApify('streamers~youtube-scraper', {
+    llamarActorApify('streamers/youtube-scraper', {
       searchKeywords: nombre,
       maxResults: 10,
-    }, token).then(i => tag(i, 'youtube')),
+    }).then(i => tag(i, 'youtube')),
   ];
 
   const resultados = await Promise.all(tareas);
@@ -342,7 +342,7 @@ function tag(items, fuente) {
 }
 
 // =========================================================
-// SCHEMAS LIMPIOS (coinciden 1:1 con las plantillas HTML)
+// SCHEMAS LIMPIOS
 // =========================================================
 
 const SCHEMAS = {
@@ -510,7 +510,7 @@ const SCHEMAS = {
 };
 
 // =========================================================
-// PROMPTS
+// PROMPTS LEGACY (FALLBACK)
 // =========================================================
 
 function buildPrompt({ skill, actorName, actor2Name, mes, anio, datosActor1, datosActor2, schema }) {
