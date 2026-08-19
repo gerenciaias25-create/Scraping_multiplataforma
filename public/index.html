@@ -1,1 +1,437 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RADAR INTELLIGENCE v2.1</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --dark: #0f172a;
+    --card: #ffffff;
+    --border: #cbd5e1;
+    --text: #0f172a;
+    --muted: #64748b;
+    --ac: #00C2D4;
+    --hdrblue: #1C2738;
+    --btn-blue: #1e3a8a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:#f1f5f9;color:var(--text);min-height:100vh;padding-bottom:40px}
+
+  .top-brand {
+    background: var(--hdrblue);
+    color: #00C2D4;
+    padding: 12px 32px;
+    font-size: 14px;
+    font-weight: 900;
+    letter-spacing: 1.5px;
+  }
+
+  .app-viewport {
+    max-width: 1200px;
+    margin: 32px auto 0;
+    padding: 0 16px;
+  }
+
+  .search-container {
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 32px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+    border: 1px solid #e2e8f0;
+  }
+  .search-header-sub {
+    font-size: 11px;
+    font-weight: 800;
+    color: #1e3a8a;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+  }
+  .search-title {
+    font-size: 24px;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 6px;
+  }
+  .search-title span { color: #1e3a8a; }
+  .search-desc {
+    font-size: 13px;
+    color: var(--muted);
+    margin-bottom: 24px;
+  }
+
+  .filter-box {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .filter-select, .filter-input {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #0f172a;
+    font-weight: 600;
+    outline: none;
+  }
+  .filter-input { flex: 1; min-width: 220px; }
+  .filter-input.hidden { display: none; }
+
+  .btn-analyze {
+    background: #1e3a8a;
+    color: #ffffff;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .btn-analyze:hover { background: #172554; }
+  .btn-analyze:disabled { opacity: .5; cursor: not-allowed; }
+
+  .hint-opositor {
+    display: none;
+    font-size: 12px;
+    color: #1e3a8a;
+    font-weight: 700;
+    margin-top: 10px;
+  }
+
+  .error-box {
+    display: none;
+    margin-top: 14px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .loading-view {
+    display: none;
+    background: #ffffff;
+    border-radius: 12px;
+    padding: 60px 32px;
+    text-align: center;
+    border: 1px solid #e2e8f0;
+  }
+  .spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid #e2e8f0;
+    border-top: 4px solid #00C2D4;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 20px;
+  }
+  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  .loading-title { font-size: 18px; font-weight: 800; color: #0f172a; margin-bottom: 8px; }
+  .loading-subtitle { font-size: 13px; color: var(--muted); }
+  .loading-steps { margin-top: 18px; font-size: 11px; color: #94a3b8; font-family: monospace; }
+
+  .dashboard-view { display: none; width: 100%; position: relative; }
+
+  .dashboard-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .btn-action {
+    background: #1C2738;
+    border: 1px solid #334155;
+    color: #ffffff;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+  }
+  .btn-action:hover {
+    background: #00C2D4;
+    color: #0f172a;
+    border-color: #00C2D4;
+  }
+
+  #skillContainer {
+    background: transparent;
+    border-radius: 8px;
+  }
+
+  @media print {
+    .top-brand, .dashboard-toolbar, .search-container, .loading-view {
+      display: none !important;
+    }
+    body { background: #fff !important; padding: 0 !important; }
+    .app-viewport { max-width: 100% !important; margin: 0 !important; padding: 0 !important; }
+    #skillContainer { border: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="top-brand">RADAR INTELLIGENCE v2.1</div>
+
+<div class="app-viewport">
+
+  <!-- VISTA 1: BÚSQUEDA -->
+  <div class="search-container" id="view1">
+    <div class="search-header-sub">Análisis Ejecutivo de Fuentes</div>
+    <div class="search-title">Módulo de <span>Inteligencia Político-Digital</span></div>
+    <p class="search-desc">Selecciona la Skill y ejecuta la consulta sobre el objetivo. Los datos se extraen en vivo (Apify) y se estructuran con IA (OpenRouter).</p>
+
+    <div class="filter-box">
+      <select id="skillSelect" class="filter-select" onchange="onSkillChange()">
+        <option value="" disabled selected>Selecciona una Skill...</option>
+        <option value="radar">Skill: RADAR Político</option>
+        <option value="emociones">Skill: Humor Social / Emociones</option>
+        <option value="tensiones">Skill: Tensiones</option>
+        <option value="opositor">Skill: Opositor (comparativo)</option>
+      </select>
+
+      <input type="text" id="targetProfile" class="filter-input" placeholder="Nombre del personaje político...">
+
+      <input type="text" id="targetProfile2" class="filter-input hidden" placeholder="Nombre del segundo personaje (comparativo)...">
+
+      <select id="monthSelect" class="filter-select">
+        <option value="Enero">Enero</option>
+        <option value="Febrero">Febrero</option>
+        <option value="Marzo">Marzo</option>
+        <option value="Abril">Abril</option>
+        <option value="Mayo">Mayo</option>
+        <option value="Junio">Junio</option>
+        <option value="Julio">Julio</option>
+        <option value="Agosto" selected>Agosto</option>
+        <option value="Septiembre">Septiembre</option>
+        <option value="Octubre">Octubre</option>
+        <option value="Noviembre">Noviembre</option>
+        <option value="Diciembre">Diciembre</option>
+      </select>
+
+      <select id="yearSelect" class="filter-select">
+        <option value="2026" selected>2026</option>
+        <option value="2025">2025</option>
+        <option value="2024">2024</option>
+        <option value="2023">2023</option>
+        <option value="2022">2022</option>
+        <option value="2021">2021</option>
+      </select>
+
+      <button type="button" class="btn-analyze" id="btnAnalyze" onclick="loadSelectedSkill()">Analizar</button>
+    </div>
+
+    <div class="hint-opositor" id="hintOpositor">⚖️ La Skill Opositor requiere dos personajes para generar la comparativa.</div>
+    <div class="error-box" id="errorBox"></div>
+  </div>
+
+  <!-- VISTA 2: LOADER -->
+  <div class="loading-view" id="view2">
+    <div class="spinner"></div>
+    <div class="loading-title">Cargando Inteligencia...</div>
+    <div class="loading-subtitle" id="loadingText">Procesando fuentes dinámicas de Apify y sintetizando con OpenRouter...</div>
+    <div class="loading-steps" id="loadingSteps"></div>
+  </div>
+
+  <!-- VISTA 3: DASHBOARD -->
+  <div class="dashboard-view" id="view3">
+    <div class="dashboard-toolbar">
+      <button class="btn-action" onclick="downloadReport()">📥 Descargar Reporte</button>
+      <button class="btn-action" onclick="resetToSearch()">🔍 Nueva Búsqueda</button>
+    </div>
+
+    <div id="skillContainer"></div>
+  </div>
+
+</div>
+
+<script>
+const SKILL_FILES = {
+  radar: 'skills/radar',
+  emociones: 'skills/emociones',
+  tensiones: 'skills/tensiones',
+  opositor: 'skills/opositor',
+};
+
+function onSkillChange() {
+  const skill = document.getElementById('skillSelect').value;
+  const isOpositor = skill === 'opositor';
+  document.getElementById('targetProfile2').classList.toggle('hidden', !isOpositor);
+  document.getElementById('hintOpositor').style.display = isOpositor ? 'block' : 'none';
+  document.getElementById('targetProfile').placeholder = isOpositor
+    ? 'Personaje A (oficialista/propio)...'
+    : 'Nombre del personaje político...';
+}
+
+function showError(msg) {
+  const box = document.getElementById('errorBox');
+  box.textContent = msg;
+  box.style.display = 'block';
+  console.error('[RADAR Error]', msg);
+}
+
+function hideError() {
+  document.getElementById('errorBox').style.display = 'none';
+}
+
+async function loadSelectedSkill() {
+  hideError();
+  const skill = document.getElementById('skillSelect').value;
+  const actor = document.getElementById('targetProfile').value.trim();
+  const actor2 = document.getElementById('targetProfile2').value.trim();
+  const mes = document.getElementById('monthSelect').value;
+  const anio = document.getElementById('yearSelect').value;
+
+  if (!skill) return showError('Por favor selecciona una Skill.');
+  if (!actor) return showError('Por favor ingresa el nombre del personaje.');
+  if (skill === 'opositor' && !actor2) return showError('La Skill Opositor requiere el segundo personaje.');
+
+  const skillPath = SKILL_FILES[skill];
+  if (!skillPath) return showError('Skill no reconocida.');
+
+  // Verificar que Chart.js esté cargado
+  if (typeof Chart === 'undefined') {
+    return showError('Error: Chart.js no está cargado. Recarga la página.');
+  }
+
+  document.getElementById('view1').style.display = 'none';
+  document.getElementById('view2').style.display = 'block';
+  document.getElementById('loadingText').textContent = `Analizando a ${actor}${actor2 ? ' vs. ' + actor2 : ''}...`;
+  document.getElementById('loadingSteps').textContent = 'Iniciando análisis...';
+
+  try {
+    // Lee la respuesta como texto primero: si el proxy de Hostinger corta la
+    // petición (504) o hay un error 404/500, la respuesta puede venir en HTML
+    // en vez de JSON. Parsear eso directo con .json() revienta con
+    // "Unexpected token '<'". Con este helper mostramos un mensaje claro.
+    async function parseJsonSeguro(resp) {
+      const raw = await resp.text();
+      try {
+        return JSON.parse(raw);
+      } catch (e) {
+        throw new Error(`El servidor respondió algo inesperado (HTTP ${resp.status}). Puede ser un timeout del hosting o que la ruta no existe.`);
+      }
+    }
+
+    // 1. Iniciar el análisis. Este endpoint responde casi de inmediato con un
+    //    jobId; el trabajo pesado (Apify + OpenRouter) corre en segundo plano
+    //    en el servidor para evitar el 504 Gateway Timeout del proxy.
+    const startResp = await fetch('/api/analizar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ skill, actor, actor2, mes, anio }),
+    });
+    const startJson = await parseJsonSeguro(startResp);
+    if (!startResp.ok) {
+      throw new Error(startJson.error || startJson.detail || 'Error al iniciar el análisis en el servidor.');
+    }
+    const jobId = startJson.jobId;
+    if (!jobId) throw new Error('El servidor no devolvió un identificador de trabajo (jobId).');
+
+    // 2. Consultar el estado hasta que el job termine (polling cada 2s, máx 5 min)
+    document.getElementById('loadingSteps').textContent = '[1/3] Extrayendo fuentes en Apify (X, Facebook, Instagram, TikTok, YouTube, prensa)...';
+    const maxIntentos = 150; // 150 x 2s = 5 minutos
+    let apiJson = null;
+    for (let intento = 0; intento < maxIntentos; intento++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const estadoResp = await fetch(`/api/estado/${jobId}`, { cache: 'no-store' });
+      const estadoJson = await parseJsonSeguro(estadoResp);
+      if (!estadoResp.ok) throw new Error(estadoJson.error || 'El trabajo expiró o no se encontró.');
+
+      if (estadoJson.progreso) document.getElementById('loadingSteps').textContent = estadoJson.progreso;
+
+      if (estadoJson.status === 'error') {
+        throw new Error(estadoJson.error || estadoJson.detail || 'Error procesando el análisis.');
+      }
+      if (estadoJson.status === 'done') {
+        apiJson = estadoJson.result;
+        break;
+      }
+    }
+    if (!apiJson) throw new Error('El análisis está tardando demasiado. Intenta de nuevo en unos minutos.');
+
+    if (!apiJson.data || typeof apiJson.data !== 'object') {
+      throw new Error('El servidor no devolvió datos estructurados (apiJson.data está vacío o es inválido).');
+    }
+
+    console.log('[RADAR] Datos recibidos del backend:', apiJson);
+    document.getElementById('loadingSteps').textContent = '[2/3] Cargando plantilla visual...';
+
+    // 3. Cargar la plantilla HTML correspondiente (solo marcado, sin <script>)
+    const htmlResp = await fetch(`${skillPath}.html`, { cache: 'no-store' });
+    if (!htmlResp.ok) throw new Error(`No se pudo cargar la plantilla: ${skillPath}.html (HTTP ${htmlResp.status})`);
+    const htmlContent = await htmlResp.text();
+
+    document.getElementById('loadingSteps').textContent = '[3/3] Inyectando datos y renderizando gráficas...';
+
+    // 4. Mostrar vista del dashboard
+    document.getElementById('view2').style.display = 'none';
+    document.getElementById('view3').style.display = 'block';
+
+    const container = document.getElementById('skillContainer');
+    container.innerHTML = '';
+
+    // 5. Inyectar datos globales ANTES de insertar el HTML de la skill
+    window.DATA = apiJson.data;
+    window.DATA_META = {
+      actor,
+      actor2: actor2 || null,
+      mes,
+      anio,
+      fuentesEncontradas: apiJson.fuentesEncontradas
+    };
+
+    // 6. Insertar HTML de la skill (sin lógica, solo markup/estilos)
+    container.innerHTML = htmlContent;
+
+    // 7. Cargar y ejecutar la lógica como un <script src> real.
+    //    Un <script src> siempre se ejecuta al insertarse en el DOM,
+    //    a diferencia de un <script> inline reinyectado, que puede ser
+    //    bloqueado por CSP o corrompido por minificadores de HTML del hosting.
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = `${skillPath}.js?v=${Date.now()}`; // cache-busting
+      s.onload = resolve;
+      s.onerror = () => reject(new Error(`No se pudo cargar la lógica: ${skillPath}.js`));
+      container.appendChild(s);
+    });
+
+    console.log('[RADAR] Skill renderizada correctamente:', skill);
+
+  } catch (err) {
+    console.error('[RADAR] Error en loadSelectedSkill:', err);
+    showError(err.message || 'Ocurrió un error inesperado');
+    resetToSearch();
+  }
+}
+
+function downloadReport() { window.print(); }
+
+function resetToSearch() {
+  document.getElementById('view3').style.display = 'none';
+  document.getElementById('view2').style.display = 'none';
+  document.getElementById('view1').style.display = 'block';
+  document.getElementById('skillContainer').innerHTML = '';
+  window.DATA = null;
+  window.DATA_META = null;
+}
+</script>
+</body>
+</html>
 
