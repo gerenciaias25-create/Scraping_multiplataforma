@@ -1,0 +1,218 @@
+<!-- =========================================================
+  EMOCIONES SKILL — Plantilla Dinámica v3.1 (Corregida)
+  Lee window.DATA del backend. Fallbacks integrados y robustos.
+  ========================================================= -->
+<div id="emo-root">
+<style>
+#emo-root{
+  --bg:#ffffff;--bg-card:#d5d1d1;--bg-card2:#d5d1d1;--bg-hdr:#1C2738;--brd:#b8b4b4;--brd2:#b8b4b4;
+  --tx1:#1e293b;--tx2:#334155;--tx3:#475569;
+  --blue:#3b82f6;--blue2:#1d4ed8;--red:#ef4444;--red-s:#991b1b;--red-bg:rgba(239,68,68,.15);
+  --org:#f97316;--org-s:#9a3412;--org-bg:rgba(249,115,22,.15);
+  --ylw:#eab308;--ylw-bg:rgba(234,179,8,.15);
+  --grn:#22c55e;--grn-s:#166534;--grn-bg:rgba(34,197,94,.15);
+  --pur:#a855f7;--pur-bg:rgba(168,85,247,.15);
+  --tel:#06b6d4;--tel-bg:rgba(6,182,212,.15);
+  --ac:#00C2D4;--hdrblue:#1C2738;
+  background:var(--bg);color:var(--tx1);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+#emo-root *{box-sizing:border-box;margin:0;padding:0}
+#emo-root .hdr{background:var(--hdrblue);border-bottom:1px solid rgba(255,255,255,.1);padding:18px 24px;display:flex;justify-content:space-between;align-items:center;border-radius:8px 8px 0 0}
+#emo-root .hdr-name{font-size:20px;font-weight:800;color:#fff;letter-spacing:.5px;line-height:1.2}
+#emo-root .hdr-name span{color:var(--ac)}
+#emo-root .hdr-sub{font-size:11px;color:#94A3B8;margin-top:4px;font-weight:500}
+#emo-root .tabs{display:flex;overflow-x:auto;border-bottom:1px solid #cbd5e1;padding:0 2rem;background:#f8fafc}
+#emo-root .tab{font-size:11.5px;font-weight:600;letter-spacing:.04em;padding:.85rem 1.1rem;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .18s}
+#emo-root .tab:hover{color:#0f172a;background:rgba(0,0,0,.03)}
+#emo-root .tab.on{color:var(--bg-hdr);border-bottom-color:var(--bg-hdr)}
+#emo-root .cnt{padding:1.4rem 2rem}
+#emo-root .pnl{display:none}#emo-root .pnl.on{display:block}
+#emo-root .g2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+#emo-root .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem}
+#emo-root .g4{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem}
+#emo-root .gauto{display:grid;grid-template-columns:430px 1fr;gap:1.2rem;align-items:start}
+#emo-root .card{background:var(--bg-card);border:1px solid var(--brd);border-radius:10px;padding:1.1rem 1.2rem}
+#emo-root .card2{background:var(--bg-card2);border:1px solid var(--brd2);border-radius:10px;padding:1.1rem 1.2rem}
+#emo-root .cv{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);margin-bottom:.55rem}
+#emo-root .cval{font-size:2rem;font-weight:800;line-height:1;color:var(--tx1)}
+#emo-root .csub{font-size:11px;color:var(--tx2);margin-top:.3rem}
+#emo-root .sl{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--tx3);margin-bottom:.7rem;padding-bottom:.35rem;border-bottom:1px solid var(--brd)}
+#emo-root .emr{padding:9px 0;border-bottom:1px solid var(--brd);cursor:pointer;transition:background .12s;border-radius:4px}
+#emo-root .emr:hover{background:rgba(0,0,0,.025)}
+#emo-root .emr:last-child{border-bottom:none}
+#emo-root .emh{display:flex;align-items:center;gap:7px}
+#emo-root .emd-box{display:none;margin-top:8px;margin-left:17px;background:rgba(0,0,0,.04);border-radius:6px;padding:8px 10px}
+#emo-root .emd-box.open{display:block}
+#emo-root .edk{font-size:10.5px;font-weight:700;color:var(--tx2);margin-bottom:3px}
+#emo-root .edv{font-size:11px;color:var(--tx1);line-height:1.6}
+#emo-root .dyc{background:var(--bg-card2);border:1px solid var(--brd2);border-radius:10px;padding:1rem 1.1rem;border-top:3px solid}
+#emo-root .dyn{font-size:14px;font-weight:800;margin-bottom:3px}
+#emo-root .dyf{font-size:11px;color:var(--tx3);font-style:italic;margin-bottom:7px}
+#emo-root .dyt{font-size:12px;color:var(--tx2);line-height:1.6}
+#emo-root .dybadge{font-size:10px;padding:2px 8px;border-radius:4px;font-weight:700;float:right;margin-top:-2px}
+#emo-root .mpc{background:var(--bg-card2);border:1px solid var(--brd2);border-radius:10px;padding:.9rem 1rem}
+#emo-root .mptt{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}
+#emo-root .mpi{font-size:12px;color:var(--tx2);padding:5px 0;border-bottom:1px solid var(--brd);display:flex;align-items:flex-start;gap:6px}
+#emo-root .mpi:last-child{border-bottom:none}
+#emo-root .mpd{width:5px;height:5px;border-radius:50%;flex-shrink:0;margin-top:5px}
+#emo-root .qi{padding:9px 0;border-bottom:1px solid var(--brd)}
+#emo-root .qi:last-child{border-bottom:none}
+#emo-root .qt{font-size:12.5px;font-style:italic;color:var(--tx1);line-height:1.55}
+#emo-root .qt::before{content:'"';color:var(--blue2);font-style:normal;font-weight:700}
+#emo-root .qt::after{content:'"';color:var(--blue2);font-style:normal;font-weight:700}
+#emo-root .qm{font-size:10.5px;color:var(--tx3);margin-top:3px}
+#emo-root .ri{display:flex;gap:9px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--brd)}
+#emo-root .ri:last-child{border-bottom:none}
+#emo-root .rb{font-size:10px;padding:3px 7px;border-radius:5px;font-weight:700;white-space:nowrap;flex-shrink:0;margin-top:1px}
+#emo-root .rt{font-size:12px;color:var(--tx2);line-height:1.6}
+#emo-root .sem{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--brd)}
+#emo-root .sem:last-child{border-bottom:none}
+#emo-root .semd{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+#emo-root .seml{font-size:12px;color:var(--tx2);flex:1}
+#emo-root .semv{font-size:12px;font-weight:700}
+#emo-root .ac{background:var(--bg-card2);border:1px solid var(--brd2);border-radius:10px;overflow:hidden}
+#emo-root .ach{padding:.9rem 1.1rem;border-bottom:1px solid var(--brd);background:rgba(0,0,0,.03)}
+#emo-root .acn{font-size:14px;font-weight:800;color:var(--tx1)}
+#emo-root .acr{font-size:11px;color:var(--tx2);margin-top:2px}
+#emo-root .acb{padding:.9rem 1.1rem}
+#emo-root .acrow{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--brd);font-size:12px}
+#emo-root .acrow:last-child{border-bottom:none}
+#emo-root .ack{color:var(--tx3);font-size:11px}
+#emo-root .acv{color:var(--tx1);font-weight:600;text-align:right;max-width:65%}
+#emo-root .cbox{background:linear-gradient(135deg,rgba(37,99,235,.08),rgba(6,182,212,.05));border:1px solid rgba(37,99,235,.2);border-radius:12px;padding:1.2rem 1.4rem;border-left:4px solid var(--blue)}
+#emo-root .cbox-label{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--blue2);margin-bottom:.35rem}
+#emo-root .cbox-name{font-size:21px;font-weight:800;color:var(--tx1);margin-bottom:.45rem}
+#emo-root .cbox-text{font-size:12.5px;color:var(--tx2);line-height:1.72}
+#emo-root .cw{position:relative}
+#emo-root .footer{background:#1C2738;border-top:1px solid rgba(255,255,255,.1);padding:14px 24px;font-size:11px;color:#94A3B8;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:40px;border-radius:0 0 8px 8px}
+@media(max-width:780px){#emo-root .gauto,#emo-root .g2,#emo-root .g3,#emo-root .g4{grid-template-columns:1fr}#emo-root .cnt{padding:1rem}#emo-root .hdr{padding:1rem}#emo-root .tabs{padding:0 1rem}}
+</style>
+
+<header class="hdr">
+  <div>
+    <h1 class="hdr-name" id="em-hdr-name">CARGANDO...</h1>
+    <p class="hdr-sub" id="em-hdr-sub"></p>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab on" onclick="emST('flor',this)">🌸 Flor de Emociones</div>
+  <div class="tab" onclick="emST('mapa',this)">🗺 Mapa Social</div>
+  <div class="tab" onclick="emST('diadas',this)">⚡ Díadas</div>
+  <div class="tab" onclick="emST('identidad',this)">🏛 Identidad Política</div>
+  <div class="tab" onclick="emST('actores',this)">👤 Actores</div>
+</div>
+
+<div class="cnt">
+
+<!-- KPIs -->
+<div class="g4" style="margin-bottom:1rem" id="em-kpis"></div>
+
+<!-- FLOR -->
+<div class="pnl on" id="empnl-flor">
+  <div class="gauto" style="margin-bottom:1rem">
+    <div>
+      <div class="sl">Rueda de Plutchik — <span id="em-whl-territory"></span></div>
+      <div class="card" style="padding:.8rem;text-align:center;background:#ffffff">
+        <div id="em-wheel-wrap"></div>
+        <div style="font-size:10px;color:var(--tx3);margin-top:.4rem">Toca cualquier pétalo activo para ver detalles</div>
+      </div>
+      <div class="card" style="margin-top:.75rem;padding:.75rem 1rem">
+        <div class="cv">Leyenda de Intensidad</div>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:5px"><div id="em-leg-hi" style="width:11px;height:11px;border-radius:50%"></div><span style="font-size:11px;color:var(--tx2)">Alta ●●●</span></div>
+          <div style="display:flex;align-items:center;gap:5px"><div id="em-leg-md" style="width:11px;height:11px;border-radius:50%"></div><span style="font-size:11px;color:var(--tx2)">Media ●●○</span></div>
+          <div style="display:flex;align-items:center;gap:5px"><div style="width:11px;height:11px;border-radius:50%;background:#e2e8f0;border:1px solid #cbd5e1"></div><span style="font-size:11px;color:var(--tx2)">Inactiva ○○○</span></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="sl">Emociones Activas — clic para expandir</div>
+      <div class="card" id="em-list"></div>
+      <div class="card" style="margin-top:.75rem;padding:.9rem 1rem">
+        <div class="sl" style="margin-bottom:.5rem">Emociones Secundarias (Latentes)</div>
+        <div id="em-sec"></div>
+      </div>
+    </div>
+  </div>
+  <div class="cbox" style="margin-bottom:1rem" id="em-concepto-box"></div>
+  <div class="card">
+    <div class="sl">Distribución de Intensidad Emocional</div>
+    <div class="cw" style="height:200px"><canvas id="em-ch-intens"></canvas></div>
+  </div>
+</div>
+
+<!-- MAPA -->
+<div class="pnl" id="empnl-mapa">
+  <div class="g3" style="margin-bottom:1rem" id="em-mapa-cols"></div>
+  <div class="g2" style="margin-bottom:1rem">
+    <div class="card"><div class="sl">Frases Ciudadanas</div><div id="em-quotes"></div></div>
+    <div class="card">
+      <div class="sl">Emociones por Temática</div>
+      <div class="cw" style="height:260px"><canvas id="em-ch-temas"></canvas></div>
+    </div>
+  </div>
+  <div class="card"><div class="sl">Semáforo Emocional del Territorio</div><div class="g3" id="em-semaforo"></div></div>
+</div>
+
+<!-- DÍADAS -->
+<div class="pnl" id="empnl-diadas">
+  <div class="g3" style="margin-bottom:1rem" id="em-dyad-cards"></div>
+  <div class="g2">
+    <div class="card">
+      <div class="sl">Score de Riesgo por Díada</div>
+      <div class="cw" style="height:220px"><canvas id="em-ch-diadas"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="sl">Interpretación Estratégica</div>
+      <div id="em-dyad-interp" style="font-size:12.5px;color:var(--tx2);line-height:1.75;margin-top:.3rem"></div>
+    </div>
+  </div>
+</div>
+
+<!-- IDENTIDAD -->
+<div class="pnl" id="empnl-identidad">
+  <div class="cbox" style="margin-bottom:1rem" id="em-id-pregunta"></div>
+  <div class="g2" style="margin-bottom:1rem">
+    <div class="card"><div class="sl">Percepción del Gobierno en Turno</div><div id="em-gov-sem"></div></div>
+    <div class="card">
+      <div class="sl">Carga Emocional por Partido</div>
+      <div class="cw" style="height:220px"><canvas id="em-ch-partidos"></canvas></div>
+    </div>
+  </div>
+  <div class="card"><div class="sl">Percepción Ciudadana por Partido</div><div id="em-partidos-tbl"></div></div>
+</div>
+
+<!-- ACTORES -->
+<div class="pnl" id="empnl-actores">
+  <div style="background:rgba(29,78,216,.07);border:1px solid rgba(29,78,216,.2);border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;font-size:11.5px;color:var(--tx2);line-height:1.6">
+    <span style="color:var(--blue2);font-weight:700" id="em-actores-label">ANÁLISIS COMPARATIVO DE ACTORES</span> — Se compara la posición emocional de los principales actores políticos del territorio, con base en investigación digital del período.
+  </div>
+  <div class="g2" style="margin-bottom:1rem" id="em-actores-grid"></div>
+  <div class="card">
+    <div class="sl">Mapa de Posicionamiento Emocional de Actores</div>
+    <div class="cw" style="height:300px"><canvas id="em-ch-actores"></canvas></div>
+  </div>
+</div>
+
+<!-- RECS (siempre visible al final) -->
+<div style="margin-top:1.5rem">
+  <div class="cbox" style="margin-bottom:1rem;border-left-color:var(--red)" id="em-alerta-box"></div>
+  <div class="card" style="margin-bottom:1rem"><div class="sl">Plan de Acción Estratégica</div><div id="em-recs-list"></div></div>
+  <div class="g2">
+    <div class="card"><div class="sl">Comunicación Contraproducente — Evitar</div><div id="em-evitar-list"></div></div>
+    <div class="card">
+      <div class="sl">Prioridad de Gestión Emocional</div>
+      <div class="cw" style="height:220px"><canvas id="em-ch-prior"></canvas></div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /cnt -->
+
+<div class="footer">
+  <span id="em-ftr-l">RADAR - Emociones</span>
+  <span>CONFIDENCIAL &middot; Uso estratégico exclusivo</span>
+</div>
+</div>
+
