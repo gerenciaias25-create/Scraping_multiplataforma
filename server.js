@@ -142,6 +142,49 @@ server.timeout = 180000;
 // =========================================================
 // NORMALIZACIÓN DE RESPUESTA
 // =========================================================
+const EMOTION_LABELS = {
+  ira: 'Ira', sorpresa: 'Sorpresa', anticipacion: 'Anticipación', tristeza: 'Tristeza',
+  asco: 'Asco', alegria: 'Alegría', confianza: 'Confianza', miedo: 'Miedo',
+};
+
+// Red de seguridad: si OpenRouter, a pesar de la instrucción explícita en el
+// prompt, devuelve "dyads" vacío o con menos de 3 elementos, las construimos
+// nosotros mismos combinando las emociones activas de mayor intensidad. Así
+// la pestaña Díadas nunca vuelve a quedar en blanco, sin depender de que el
+// modelo decida cooperar en cada corrida.
+function sintetizarDyads(emotions) {
+  const activas = (emotions || [])
+    .filter(e => e.active && e.intensity > 0)
+    .sort((a, b) => b.intensity - a.intensity);
+
+  if (activas.length < 2) return [];
+
+  const pares = [];
+  for (let i = 0; i < activas.length - 1 && pares.length < 3; i++) {
+    pares.push([activas[i], activas[i + 1]]);
+  }
+  // Si con emociones consecutivas no alcanzan 3 pares, combina también la 1ª con la 3ª.
+  if (pares.length < 3 && activas.length >= 3) pares.push([activas[0], activas[2]]);
+
+  const RISK_BY_SCORE = (score) => score >= 75 ? 'CRÍTICO' : score >= 55 ? 'ALTO' : score >= 35 ? 'MEDIO' : 'BAJO';
+
+  return pares.slice(0, 4).map(([a, b], idx) => {
+    const labelA = EMOTION_LABELS[a.key] || a.key;
+    const labelB = EMOTION_LABELS[b.key] || b.key;
+    const score = Math.round(((a.intensity + b.intensity) / 6) * 100);
+    const triggersA = (a.triggers || []).slice(0, 2).join(', ');
+    const triggersB = (b.triggers || []).slice(0, 2).join(', ');
+    return {
+      name: `${labelA} + ${labelB}`,
+      formula: `${labelA} + ${labelB}`,
+      type: idx === 0 ? 'Primaria' : 'Secundaria',
+      text: `La combinación de ${labelA.toLowerCase()} (detonada por ${triggersA || 'factores del contexto reciente'}) y ${labelB.toLowerCase()} (asociada a ${triggersB || 'la percepción ciudadana del período'}) genera una dinámica emocional de riesgo ${RISK_BY_SCORE(score).toLowerCase()} que puede erosionar la confianza si no se atiende con comunicación específica y acciones visibles en el corto plazo.`,
+      risk: RISK_BY_SCORE(score),
+      score,
+    };
+  });
+}
+
 function normalizeResponse(data, skill) {
   if (!data || typeof data !== 'object') data = {};
 
