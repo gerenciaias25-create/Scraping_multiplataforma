@@ -6,6 +6,8 @@
   <title>RADAR - Inteligencia Político-Electoral</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Librería para conversión a PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <style>
     .loader {
@@ -46,62 +48,68 @@
         <i class="fa-solid fa-sliders text-blue-400"></i> Parámetros de Análisis
       </h2>
       
-      <form id="radarForm" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        
-        <!-- Skill -->
-        <div>
-          <label class="block text-xs font-medium text-slate-400 mb-1">Módulo / Skill</label>
-          <select id="skill" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500">
-            <option value="radar">Radar Competitivo</option>
-            <option value="emociones">Mapa de Emociones</option>
-            <option value="tensiones">Matriz de Tensiones</option>
-            <option value="opositor">Expediente Opositor</option>
-          </select>
+      <form id="radarForm" class="space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <!-- Skill -->
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Módulo / Skill</label>
+            <select id="skill" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500">
+              <option value="radar">Radar Competitivo</option>
+              <option value="emociones">Mapa de Emociones</option>
+              <option value="tensiones">Matriz de Tensiones</option>
+              <option value="opositor">Expediente Opositor</option>
+            </select>
+          </div>
+
+          <!-- Mes -->
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Mes</label>
+            <select id="mes" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500">
+              <option value="Enero">Enero</option>
+              <option value="Febrero">Febrero</option>
+              <option value="Marzo">Marzo</option>
+              <option value="Abril">Abril</option>
+              <option value="Mayo">Mayo</option>
+              <option value="Junio">Junio</option>
+              <option value="Julio">Julio</option>
+              <option value="Agosto" selected>Agosto</option>
+              <option value="Septiembre">Septiembre</option>
+              <option value="Octubre">Octubre</option>
+              <option value="Noviembre">Noviembre</option>
+              <option value="Diciembre">Diciembre</option>
+            </select>
+          </div>
+
+          <!-- Año -->
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">Año</label>
+            <select id="anio" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500">
+              <option value="2026" selected>2026</option>
+              <option value="2025">2025</option>
+              <option value="2024">2024</option>
+            </select>
+          </div>
         </div>
 
-        <!-- Actor 1 -->
-        <div>
-          <label class="block text-xs font-medium text-slate-400 mb-1">Actor Principal *</label>
-          <input type="text" id="actor" required placeholder="Ej: Claudia Sheinbaum" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500">
-        </div>
-
-        <!-- Actor 2 (Opcional) -->
-        <div>
-          <label class="block text-xs font-medium text-slate-400 mb-1">Actor Secundario / Opositor</label>
-          <input type="text" id="actor2" placeholder="Opcional" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500">
-        </div>
-
-        <!-- Mes -->
-        <div>
-          <label class="block text-xs font-medium text-slate-400 mb-1">Mes</label>
-          <select id="mes" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500">
-            <option value="Enero">Enero</option>
-            <option value="Febrero">Febrero</option>
-            <option value="Marzo">Marzo</option>
-            <option value="Abril">Abril</option>
-            <option value="Mayo">Mayo</option>
-            <option value="Junio">Junio</option>
-            <option value="Julio">Julio</option>
-            <option value="Agosto" selected>Agosto</option>
-            <option value="Septiembre">Septiembre</option>
-            <option value="Octubre">Octubre</option>
-            <option value="Noviembre">Noviembre</option>
-            <option value="Diciembre">Diciembre</option>
-          </select>
-        </div>
-
-        <!-- Año -->
-        <div>
-          <label class="block text-xs font-medium text-slate-400 mb-1">Año</label>
-          <select id="anio" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500">
-            <option value="2026" selected>2026</option>
-            <option value="2025">2025</option>
-            <option value="2024">2024</option>
-          </select>
+        <!-- Selección Dinámica de Actores (1 a 4) -->
+        <div class="border-t border-slate-700/50 pt-4">
+          <div class="flex justify-between items-center mb-2">
+            <label class="block text-xs font-medium text-slate-400">Actores Políticos (1 a 4) *</label>
+            <button type="button" id="btnAddActor" class="text-xs bg-slate-700 hover:bg-slate-600 text-blue-400 px-2.5 py-1 rounded transition flex items-center gap-1">
+              <i class="fa-solid fa-plus"></i> Añadir Actor
+            </button>
+          </div>
+          
+          <div id="actoresContainer" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <!-- Actor 1 (Por defecto) -->
+            <div class="relative flex items-center">
+              <input type="text" class="actor-input w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500" placeholder="Actor Principal (Ej: Claudia Sheinbaum)" required>
+            </div>
+          </div>
         </div>
 
         <!-- Botón submit -->
-        <div class="lg:col-span-5 flex justify-end mt-2">
+        <div class="flex justify-end pt-2">
           <button type="submit" id="btnAnalizar" class="w-full md:w-auto bg-blue-600 hover:bg-blue-500 text-white font-medium px-6 py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20">
             <i class="fa-solid fa-bolt"></i> Ejecutar Análisis Masivo
           </button>
@@ -120,18 +128,31 @@
 
     <!-- Display de Resultados -->
     <section id="resultsSection" class="hidden space-y-6">
-      <!-- Resumen Ejecutivo Banner -->
-      <div class="bg-gradient-to-r from-blue-900/40 to-slate-800 border border-blue-500/30 rounded-xl p-6 shadow-xl">
-        <div class="flex items-center gap-3 mb-2">
-          <i class="fa-solid fa-file-contract text-blue-400 text-lg"></i>
-          <h2 class="text-lg font-bold text-white">Resumen Ejecutivo</h2>
-        </div>
-        <p id="resumenEjecutivoText" class="text-sm text-slate-300 leading-relaxed">Procesando datos...</p>
+      <!-- Opciones de Exportación / Botones de Descarga -->
+      <div class="flex justify-end items-center gap-3">
+        <button id="btnExportPDF" class="bg-red-600 hover:bg-red-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition flex items-center gap-2 shadow-md">
+          <i class="fa-solid fa-file-pdf"></i> Descargar PDF
+        </button>
+        <button id="btnExportHTML" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition flex items-center gap-2 shadow-md">
+          <i class="fa-solid fa-code"></i> Descargar HTML Dinámico
+        </button>
       </div>
 
-      <!-- Contenedores Dinámicos -->
-      <div id="outputContainer" class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-6 min-h-[300px]">
-        <!-- Aquí se inyectan dinámicamente las tarjetas, tablas o JSON -->
+      <!-- Área Exportable -->
+      <div id="exportableArea" class="space-y-6">
+        <!-- Resumen Ejecutivo Banner -->
+        <div class="bg-gradient-to-r from-blue-900/40 to-slate-800 border border-blue-500/30 rounded-xl p-6 shadow-xl">
+          <div class="flex items-center gap-3 mb-2">
+            <i class="fa-solid fa-file-contract text-blue-400 text-lg"></i>
+            <h2 class="text-lg font-bold text-white">Resumen Ejecutivo</h2>
+          </div>
+          <p id="resumenEjecutivoText" class="text-sm text-slate-300 leading-relaxed">Procesando datos...</p>
+        </div>
+
+        <!-- Contenedores Dinámicos -->
+        <div id="outputContainer" class="bg-slate-800/60 border border-slate-700/60 rounded-xl p-6 min-h-[300px]">
+          <!-- Aquí se inyectan dinámicamente las tarjetas, tablas o JSON -->
+        </div>
       </div>
     </section>
 
@@ -146,16 +167,54 @@
     const resultsSection = document.getElementById('resultsSection');
     const resumenEjecutivoText = document.getElementById('resumenEjecutivoText');
     const outputContainer = document.getElementById('outputContainer');
+    
+    const actoresContainer = document.getElementById('actoresContainer');
+    const btnAddActor = document.getElementById('btnAddActor');
+    const btnExportPDF = document.getElementById('btnExportPDF');
+    const btnExportHTML = document.getElementById('btnExportHTML');
 
     let pollingInterval = null;
+
+    // Manejo de adición de actores (Máximo 4)
+    btnAddActor.addEventListener('click', () => {
+      const currentActores = actoresContainer.querySelectorAll('.actor-input').length;
+      if (currentActores >= 4) {
+        alert('Se permite un máximo de 4 actores comparativos.');
+        return;
+      }
+
+      const div = document.createElement('div');
+      div.className = 'relative flex items-center gap-2';
+      div.innerHTML = `
+        <input type="text" class="actor-input w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-blue-500" placeholder="Actor ${currentActores + 1} (Opcional)">
+        <button type="button" class="btnRemoveActor text-slate-400 hover:text-red-400 p-2 text-sm transition">
+          <i class="fa-solid fa-trash"></i>
+        </button>
+      `;
+
+      actoresContainer.appendChild(div);
+
+      div.querySelector('.btnRemoveActor').addEventListener('click', () => {
+        div.remove();
+      });
+    });
 
     radarForm.addEventListener('submit', async (e) => {
       e.preventDefault();
 
+      // Recopilar lista de actores ingresados
+      const actorInputs = Array.from(document.querySelectorAll('.actor-input'))
+                               .map(input => input.value.trim())
+                               .filter(val => val !== '');
+
+      if (actorInputs.length === 0) {
+        alert('Debe ingresar al menos un actor.');
+        return;
+      }
+
       const payload = {
         skill: document.getElementById('skill').value,
-        actor: document.getElementById('actor').value,
-        actor2: document.getElementById('actor2').value,
+        actores: actorInputs, // Envío como arreglo (1 a 4 actores)
         mes: document.getElementById('mes').value,
         anio: document.getElementById('anio').value,
       };
@@ -235,6 +294,31 @@
       // Inyectar visualización según la Skill
       outputContainer.innerHTML = `<pre class="text-xs text-emerald-400 bg-slate-950 p-4 rounded-lg overflow-x-auto font-mono">${JSON.stringify(data, null, 2)}</pre>`;
     }
+
+    // Exportación a HTML Interactivo / Dinámico
+    btnExportHTML.addEventListener('click', () => {
+      const htmlContent = `<!DOCTYPE html>\n<html>\n${document.documentElement.innerHTML}\n</html>`;
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `RADAR_Dashboard_${new Date().toISOString().slice(0,10)}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // Exportación a PDF estático
+    btnExportPDF.addEventListener('click', () => {
+      const element = document.getElementById('exportableArea');
+      const opt = {
+        margin:       0.5,
+        filename:     `RADAR_Informe_${new Date().toISOString().slice(0,10)}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2, backgroundColor: '#0f172a' },
+        jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+      };
+      html2pdf().set(opt).from(element).save();
+    });
   </script>
 </body>
 </html>
