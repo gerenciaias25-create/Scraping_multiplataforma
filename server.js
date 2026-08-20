@@ -3,37 +3,24 @@ import cors from 'cors';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-import { ejecutarScraping } from './services/apify.js';
-import { estructurarConOpenRouter } from './services/openrouter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const express = require('express');
-const path = require('path');
+
 const app = express();
 
-app.use(express.json());
+// Middlewares
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
 
-// Servir la carpeta public como estática
-app.use(express.static(path.join(__dirname, 'public')));
+// Servir archivos estáticos
+app.use(express.static(__dirname));
 
-// Importar rutas de backend
-const apifyRoutes = require('./routes/apifyRoutes');
-const openRouterRoutes = require('./routes/openRouterRoutes');
-
-// Registrar endpoints de API
-app.use('/api/apify', apifyRoutes);
-app.use('/api/openrouter', openRouterRoutes);
-
-// Ruta principal para servir index.html
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// Servir la vista principal
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Servidor activo en el puerto ${PORT}`);
-});
 // =========================================================
 // TRABAJOS EN SEGUNDO PLANO
 // El proxy de Hostinger corta peticiones que tardan mucho
@@ -68,17 +55,18 @@ app.post('/api/analizar', (req, res) => {
     return res.status(400).json({ error: 'El parámetro "actor" es requerido.' });
   }
 
-  const APIFY_TOKEN = process.env.APIFY_TOKEN || process.env.APIFY_API_TOKEN;
-  const OPENROUTER_KEY = process.env.OPENROUTER_KEY || process.env.OPENROUTER_API_KEY;
+  const APIFY_TOKEN = process.env.APIFY_API_TOKEN || process.env.APIFY_TOKEN;
+  const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
 
   if (!OPENROUTER_KEY) {
-    return res.status(500).json({ error: 'Falta OPENROUTER_KEY en las variables de entorno.' });
+    return res.status(500).json({ error: 'Falta OPENROUTER_API_KEY en las variables de entorno.' });
   }
 
   const jobId = crypto.randomUUID();
   JOBS.set(jobId, { status: 'processing', progreso: 'Extrayendo fuentes en Apify...' });
 
-  // Se procesa en segundo plano; NO se espera (no "await") para poder responder al cliente de inmediato.
+  // Se procesa en segundo plano; NO se espera (no "await") para
+  // poder responder al cliente de inmediato.
   procesarAnalisis({ jobId, skill, actorName, actor2Name, mes, anio, APIFY_TOKEN, OPENROUTER_KEY });
 
   return res.status(202).json({ jobId });
@@ -99,7 +87,7 @@ async function procesarAnalisis({ jobId, skill, actorName, actor2Name, mes, anio
 
     JOBS.set(jobId, { status: 'processing', progreso: 'Extrayendo fuentes en Apify (X, Facebook, Instagram, TikTok, YouTube, prensa)...' });
 
-    // 1. Scraping masivo (fuentes en paralelo)
+    // 1. Scraping masivo (6 fuentes en paralelo)
     const [datosActor1, datosActor2] = await Promise.all([
       scrapeActor(actorName, APIFY_TOKEN),
       actor2Name ? scrapeActor(actor2Name, APIFY_TOKEN) : Promise.resolve(null),
@@ -109,21 +97,8 @@ async function procesarAnalisis({ jobId, skill, actorName, actor2Name, mes, anio
 
     // 2. Estructuración con OpenRouter
     const schema = SCHEMAS[skill] || SCHEMAS.radar;
-    
-    // Intentamos procesar primero mediante el servicio optimizado de OpenRouter
-    let structured;
-    try {
-      const rawPayload = {
-        actor1: datosActor1,
-        actor2: datosActor2,
-        periodo: `${mes} ${anio}`
-      };
-      structured = await estructurarConOpenRouter(skill, rawPayload);
-    } catch (openRouterErr) {
-      console.warn(`[!] Falló servicio OpenRouter directo, recurriendo a prompt legacy:`, openRouterErr.message);
-      const prompt = buildPrompt({ skill, actorName, actor2Name, mes, anio, datosActor1, datosActor2, schema });
-      structured = await callOpenRouter(prompt, OPENROUTER_KEY);
-    }
+    const prompt = buildPrompt({ skill, actorName, actor2Name, mes, anio, datosActor1, datosActor2, schema });
+    const structured = await callOpenRouter(prompt, OPENROUTER_KEY);
 
     // 3. Normalizar respuesta para asegurar que todos los arrays existan
     const normalized = normalizeResponse(structured, skill);
@@ -285,54 +260,110 @@ function normalizeResponse(data, skill) {
 }
 
 // =========================================================
-// APIFY: SCRAPING MODULARIZADO CON TIMEOUT AMPLIO
+// APIFY: SCRAPING
 // =========================================================
 
-async function llamarActorApify(actorPath, payload) {
+// Antes: 35s fijos para TODOS los actores. Los actores reales de scraping
+// (Facebook, Instagram, TikTok) casi nunca terminan en 35s -> el fetch se
+// abortaba, el server devolvía [] y OpenRouter recibía datos vacíos, aunque
+// el run de Apify ya había consumido créditos en segundo plano.
+// Como /api/analizar ya corre en background (jobId + polling), sí hay
+// margen real de tiempo: no hace falta abortar tan rápido.
+async function llamarActorApify(actorPath, payload, token, timeoutMs = 60000) {
+  if (!token) return [];
   try {
-    const data = await ejecutarScraping(actorPath, payload);
-    return Array.isArray(data) ? data : [];
+    // Le pedimos a Apify que espere hasta timeoutMs (en segundos) y nos
+    // devuelva lo que tenga listo en ese momento (partial results incluidos).
+    const apifyTimeoutSec = Math.round(timeoutMs / 1000);
+    const url = `https://api.apify.com/v2/acts/${actorPath}/run-sync-get-dataset-items?token=${token}&timeout=${apifyTimeoutSec}`;
+
+    // El abort de NUESTRO fetch se dispara un poco DESPUÉS del timeout que
+    // le dimos a Apify, para darle margen a que la respuesta de Apify llegue
+    // completa en vez de cortarla nosotros mismos primero.
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), timeoutMs + 10000);
+
+    const inicio = Date.now();
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(t);
+
+    if (!r.ok) {
+      console.warn(`[!] Apify ${actorPath} respondió HTTP ${r.status} tras ${Date.now() - inicio}ms`);
+      return [];
+    }
+    const data = await r.json();
+    const items = Array.isArray(data) ? data : [];
+    console.log(`[✓] Apify ${actorPath}: ${items.length} items en ${Date.now() - inicio}ms`);
+    return items;
   } catch (e) {
     console.warn(`[!] Timeout o fallo en actor ${actorPath}:`, e.message);
     return [];
   }
 }
 
+// Timeouts realistas por plataforma. google-search suele responder rápido;
+// facebook/instagram/tiktok necesitan mucho más tiempo real de scraping.
+// Como el job corre en background (frontend hace polling hasta 5 min),
+// hay margen de sobra para esperar sin generar un 504.
+const PLATFORM_TIMEOUTS = {
+  prensa: 60000,
+  twitter: 90000,
+  facebook: 110000,
+  instagram: 100000,
+  tiktok: 90000,
+  youtube: 80000,
+};
+
 async function scrapeActor(nombre, token) {
   const tareas = [
-    llamarActorApify('apify/google-search-scraper', {
+    llamarActorApify('apify~google-search-scraper', {
       queries: `"${nombre}" (noticias OR opinión OR declaraciones)`,
       resultsPerPage: 20,
-    }).then(i => tag(i, 'prensa')),
+    }, token, PLATFORM_TIMEOUTS.prensa).then(i => tag(i, 'prensa')),
 
-    llamarActorApify('apidojo/tweet-scraper', {
+    llamarActorApify('apidojo~tweet-scraper', {
       searchTerms: [nombre],
       maxItems: 30,
-    }).then(i => tag(i, 'twitter')),
+    }, token, PLATFORM_TIMEOUTS.twitter).then(i => tag(i, 'twitter')),
 
-    llamarActorApify('apify/facebook-posts-scraper', {
+    llamarActorApify('apify~facebook-posts-scraper', {
       search: nombre,
       resultsLimit: 20,
-    }).then(i => tag(i, 'facebook')),
+    }, token, PLATFORM_TIMEOUTS.facebook).then(i => tag(i, 'facebook')),
 
-    llamarActorApify('apify/instagram-scraper', {
+    llamarActorApify('apify~instagram-scraper', {
       search: nombre,
       resultsLimit: 15,
-    }).then(i => tag(i, 'instagram')),
+    }, token, PLATFORM_TIMEOUTS.instagram).then(i => tag(i, 'instagram')),
 
-    llamarActorApify('clockworks/tiktok-scraper', {
+    llamarActorApify('clockworks~tiktok-scraper', {
       searchQueries: [nombre],
       resultsPerPage: 15,
-    }).then(i => tag(i, 'tiktok')),
+    }, token, PLATFORM_TIMEOUTS.tiktok).then(i => tag(i, 'tiktok')),
 
-    llamarActorApify('streamers/youtube-scraper', {
+    llamarActorApify('streamers~youtube-scraper', {
       searchKeywords: nombre,
       maxResults: 10,
-    }).then(i => tag(i, 'youtube')),
+    }, token, PLATFORM_TIMEOUTS.youtube).then(i => tag(i, 'youtube')),
   ];
 
-  const resultados = await Promise.all(tareas);
-  const rawItems = resultados.flat();
+  // Promise.allSettled en vez de Promise.all: si un actor revienta con una
+  // excepción no controlada, no debe tumbar a los otros 5 que sí llegaron bien.
+  const resultados = await Promise.allSettled(tareas);
+  const rawItems = resultados
+    .filter(r => r.status === 'fulfilled')
+    .flatMap(r => r.value);
+
+  const conteoPorFuente = rawItems.reduce((acc, i) => {
+    acc[i.__fuente] = (acc[i.__fuente] || 0) + 1;
+    return acc;
+  }, {});
+  console.log(`[i] Scraping "${nombre}" — items por fuente:`, conteoPorFuente, `| total: ${rawItems.length}`);
 
   const textos = rawItems
     .map(i => ({
@@ -343,7 +374,7 @@ async function scrapeActor(nombre, token) {
       likes: i.likeCount ?? i.likes ?? i.diggCount ?? null,
     }))
     .filter(t => t.texto && t.texto.length > 8)
-    .slice(0, 120);
+    .slice(0, 160);
 
   return { count: textos.length, items: textos };
 }
@@ -353,7 +384,7 @@ function tag(items, fuente) {
 }
 
 // =========================================================
-// SCHEMAS LIMPIOS
+// SCHEMAS LIMPIOS (coinciden 1:1 con las plantillas HTML)
 // =========================================================
 
 const SCHEMAS = {
@@ -411,7 +442,7 @@ const SCHEMAS = {
     concept: "string",
     conceptDesc: "string",
     emotions: [
-      { key: "ira|sorpresa|anticipacion|tristeza|asco|alegria|confianza|miedo", active: true, intensity: 1, triggers: ["string"], consequences: ["string"] }
+      { key: "ira|sorpresa|anticipacion|tristeza|asco|alegria|confianza|miedo", active: true, intensity: 2, triggers: ["string"], consequences: ["string"] }
     ],
     secondary: [{ name: "string", text: "string", color: "#hex" }],
     problematics: ["string"],
@@ -521,7 +552,7 @@ const SCHEMAS = {
 };
 
 // =========================================================
-// PROMPTS LEGACY (FALLBACK)
+// PROMPTS
 // =========================================================
 
 function buildPrompt({ skill, actorName, actor2Name, mes, anio, datosActor1, datosActor2, schema }) {
@@ -537,8 +568,14 @@ function buildPrompt({ skill, actorName, actor2Name, mes, anio, datosActor1, dat
     : '';
 
   const instruccionesEstructura = skill === 'emociones'
-    ? `\nINSTRUCCIONES DE ESTRUCTURA CRÍTICAS (Emociones):\n- "temasChart" debe ser un ARRAY DE ARRAYS: cada elemento es ["nombre del tema", porcentajeNumero, "colorHex"]. Ejemplo: [["Seguridad", 35, "#3b82f6"], ["Economía", 25, "#f97316"]]\n- "partidosChart" debe ser un ARRAY DE ARRAYS: cada elemento es [iraAscoNum, decepcionTristezaNum, interesDisponibleNum]. Ejemplo: [[45, 30, 25], [20, 60, 20]]\n- "gestionPrioridad" debe ser un ARRAY DE ARRAYS: cada elemento es ["label", valorNumero, "colorHex"]. Ejemplo: [["Comunicación", 85, "#ef4444"]]\n- "actores.rows" dentro de cada actor debe ser un ARRAY DE ARRAYS: cada elemento es ["label", "valor"]. Ejemplo: [["Cargo", "Gobernador"], ["Partido", "Morena"]]\n- "actoresRadar.data" debe ser un ARRAY DE ARRAYS de números (0-100), uno por actor.\n- "recs" debe incluir las propiedades: bg (color fondo), tx (color texto), label (texto corto), text (descripción).\n- "secondary" debe incluir color (hex) para cada emoción secundaria.`
+    ? `\nINSTRUCCIONES DE ESTRUCTURA CRÍTICAS (Emociones):\n- "emotions.intensity" es un ENTERO de escala fija 0-3, NUNCA otro rango: 0 = inactiva (no se detecta evidencia real de esta emoción), 1 = baja, 2 = media, 3 = alta. Debes DISTRIBUIR intensidades realistas y VARIADAS entre las 8 emociones según la evidencia — está PROHIBIDO poner intensity:3 a todas las emociones activas; eso es un error, no un signo de análisis completo. Como referencia, en un territorio típico: 1-2 emociones en intensidad 3 (las dominantes), 2-3 en intensidad 2, el resto en 1 o 0 (inactivas). Refleja la mezcla real de las fuentes, no un maximalismo genérico.\n- "dyads" (Díadas Emocionales) — NUNCA lo dejes vacío, es OBLIGATORIO que tenga mínimo 3 elementos, sin excepción. Una díada emocional es la COMBINACIÓN de dos de las 8 emociones activas que juntas producen una dinámica política específica y nombrable. Estructura de cada díada: "name" = nombre corto de la dinámica combinada (ej. "Indignación Resignada", "Miedo Desconfiado", "Esperanza Cautelosa"); "formula" = las dos emociones que se combinan, formato "EmociónA + EmociónB" (ej. "Ira + Tristeza"); "type" = "Primaria" si es la combinación dominante en el territorio o "Secundaria" si es una dinámica emergente menor; "text" = párrafo explicando el mecanismo político-emocional de esa combinación y su implicación estratégica; "risk" = CRÍTICO/ALTO/MEDIO/BAJO; "score" = número 0-100 de intensidad de riesgo. Ejemplo completo: {"name":"Indignación Resignada","formula":"Ira + Tristeza","type":"Primaria","text":"La ciudadanía combina enojo activo por el desabasto de agua con una tristeza resignada ante la falta de respuesta institucional, generando apatía electoral disfrazada de crítica...","risk":"ALTO","score":78}. Construye las díadas a partir de las emociones con mayor "intensity" en el array "emotions" — siempre hay al menos 3 combinaciones detectables en cualquier territorio político real.\n- "dyadInterp" debe ser un párrafo (60-120 palabras) interpretando el conjunto de díadas en términos de estrategia política, no una frase genérica.\n- "actores.rows" (comparación de actores políticos) — cada actor debe traer MÍNIMO 6 filas, usando estas categorías de análisis como referencia (puedes adaptar la etiqueta exacta pero cubre el fondo de cada una): "Emoción dominante que activa", "Rol narrativo (Westen)", "Capital emocional positivo/diferencial", "Fundación moral que activa (Haidt)", "Principal vulnerabilidad", "Ventana estratégica 30 días" o "Riesgo para [el otro actor]". El VALOR de cada fila NUNCA debe ser una etiqueta corta o palabra suelta — debe ser una CLÁUSULA COMPLETA Y ESPECÍFICA con evidencia concreta (cifras, nombres de proyectos/lugares, fechas), del mismo nivel de detalle que: "78 Huellas de la Transformación, 250+ patrullas, Mexicable al 68%" o "Brecha entre cifras oficiales y experiencia cotidiana en colonias periféricas" — nunca algo tan corto como "Popularidad alta" o "Buena imagen".\n- "temasChart" debe ser un ARRAY DE ARRAYS: cada elemento es ["nombre del tema", porcentajeNumero, "colorHex"]. Ejemplo: [["Seguridad", 35, "#3b82f6"], ["Economía", 25, "#f97316"]]\n- "partidosChart" debe ser un ARRAY DE ARRAYS: cada elemento es [iraAscoNum, decepcionTristezaNum, interesDisponibleNum]. Ejemplo: [[45, 30, 25], [20, 60, 20]]\n- "gestionPrioridad" debe ser un ARRAY DE ARRAYS: cada elemento es ["label", valorNumero, "colorHex"]. Ejemplo: [["Comunicación", 85, "#ef4444"]]\n- "actoresRadar.data" debe ser un ARRAY DE ARRAYS de números (0-100), uno por actor.\n- "recs" debe incluir las propiedades: bg (color fondo), tx (color texto), label (texto corto), text (descripción).\n- "secondary" debe incluir color (hex) para cada emoción secundaria.`
     : '';
+
+  // Antes solo decía "al menos un elemento" -> el modelo cumplía con el
+  // mínimo literal (1-2 items, textos de una línea). Aquí se especifica
+  // cuánto es "amplio" para cada skill, campo por campo, en vez de dejarlo
+  // a interpretación del modelo.
+  const requisitosCantidad = REQUISITOS_MINIMOS[skill] || '';
 
   const system = `Eres un analista de inteligencia político-electoral en México. Produce un análisis estructurado ÚNICAMENTE en formato JSON, sin texto adicional, sin markdown, sin backticks.
 
@@ -548,27 +585,84 @@ ${schema}
 - Basa el análisis en los datos crudos proporcionados.
 - Si no hay datos crudos suficientes para algún campo, genera valores realistas basados en el contexto político mexicano pero SIEMPRE respeta los nombres de propiedades del esquema.
 - Todos los textos en español de México.
-- Asegúrate de que TODOS los arrays tengan al menos un elemento.
 - Los campos numéricos deben ser números, no strings.
-- NUNCA omitas ninguna propiedad del esquema, aunque sea con valores de fallback.${guardarropaOpositor}${instruccionesEstructura}`;
+- NUNCA omitas ninguna propiedad del esquema, aunque sea con valores de fallback.
+- PROHIBIDO conformarte con el mínimo técnico de "al menos 1 elemento". Este es un reporte profesional de consultoría política que un cliente va a pagar y leer a detalle: cada sección debe sentirse completa e investigada, no un placeholder.
+- Cualquier campo de texto libre (p. ej. "descripcion", "texto", "analisis", "resumenEjecutivo", "argumento", "observaciones", "dyadInterp") debe ser un PÁRRAFO COMPLETO de 60 a 120 palabras con razonamiento específico y concreto (nombres, cifras, mecanismos causales) — NUNCA una sola oración genérica ni una viñeta corta.
+- ESPECIFICIDAD OBLIGATORIA en TODOS los campos, incluyendo arrays de strings cortos (p. ej. "problematics", "fears", "prides", "evitar"): cada elemento debe anclarse en un hecho verificable-style — fecha o mes aproximado, nombre de colonia/municipio/zona, cifra o porcentaje, o nombre de un actor/cargo específico. Evita frases genéricas tipo "la gente está preocupada por la inseguridad"; en vez de eso escribe algo con el nivel de detalle de: "Desabasto de agua recurrente: más de 230 colonias en tandeo; bloqueos documentados en [mes] [año] en [colonia específica]". Si no tienes un dato exacto de las fuentes, construye el hecho de forma verosímil y específica para el contexto real del territorio evaluado (no inventes cifras absurdas, pero tampoco te quedes en lo genérico).
+${requisitosCantidad}${guardarropaOpositor}${instruccionesEstructura}`;
 
   const user = `Periodo evaluado: ${mes} ${anio}
 Skill solicitada: ${skill}
 
 ${contexto}
 
-Genera el JSON completo con el esquema indicado. No omitas ninguna propiedad. Si no hay datos suficientes para una sección, genera datos representativos del contexto político mexicano actual.`;
+Genera el JSON completo con el esquema indicado, cumpliendo las cantidades mínimas por sección y la extensión de párrafo indicadas arriba. No omitas ninguna propiedad. Si no hay datos suficientes para una sección, genera datos representativos y bien razonados del contexto político mexicano actual — pero con la misma profundidad y cantidad exigidas, nunca recortando el contenido por falta de fuentes.`;
 
   return { system, user };
 }
+
+// Cantidades mínimas por skill, calibradas para igualar la densidad que
+// tenían los dashboards estáticos originales (que tú ya conoces).
+// Ajusta estos números libremente según lo que necesite cada plantilla.
+const REQUISITOS_MINIMOS = {
+  radar: `
+REQUISITOS MÍNIMOS DE CANTIDAD (RADAR) — no entregues menos de esto:
+- sentimiento.hallazgos: mínimo 4 hallazgos bivariados distintos.
+- topOfMind.cruces: mínimo 4 cruces temáticos.
+- plataformas.lecturaEstrategica: mínimo 3 lecturas, una por cada plataforma más relevante.
+- narrativas.favorables: mínimo 3. narrativas.criticas: mínimo 3. narrativas.neutras: mínimo 2. (Total mínimo 8 narrativas, no 2-3.)
+- riesgosOportunidades.riesgos: mínimo 4. riesgosOportunidades.oportunidades: mínimo 3.
+- territorial.zonas: mínimo 5 zonas/municipios distintos del territorio evaluado.
+- territorial.volumenPorZona: mismo número de entradas que "zonas".
+- resumenEjecutivo: mínimo 120 palabras, con al menos 3 hallazgos concretos citados.`,
+
+  emociones: `
+REQUISITOS MÍNIMOS DE CANTIDAD (EMOCIONES) — no entregues menos de esto:
+- emotions: EXACTAMENTE 8 entradas (las 8 emociones base de Plutchik), con "active:true" solo en las realmente detectadas y "active:false" en el resto — pero las 8 deben existir con "triggers" y "consequences" no vacíos.
+- secondary: mínimo 4 emociones secundarias.
+- quotes: mínimo 6 frases ciudadanas distintas, cada una con cita textual + emoción/tono + colonia o zona específica (como en el ejemplo: cita, luego "Tema · Emoción · Colonia").
+- dyads: mínimo 3 díadas emocionales.
+- partidos: mínimo 3 partidos/actores políticos distintos.
+- actores: mínimo 3 actores comparados, cada uno con mínimo 6 filas en "rows" (ver categorías e instrucciones de contenido en la sección de INSTRUCCIONES DE ESTRUCTURA CRÍTICAS).
+- recs: mínimo 5 recomendaciones estratégicas, cubriendo distintas urgencias (urgente/corto/mediano/permanente).
+- evitar: mínimo 4 elementos.
+- problematics: mínimo 6 elementos, cada uno anclado en un hecho específico (fecha, colonia, cifra, nombre de funcionario si aplica) — usa como referencia de densidad y estilo: "Desabasto de agua recurrente: más de 230 colonias en tandeo; bloqueos documentados en febrero y mayo 2026 en Paseo de los Mexicas y Conscripto".
+- fears: mínimo 5 elementos con el mismo nivel de especificidad territorial y temporal.
+- prides: mínimo 4 elementos con el mismo nivel de especificidad (nombres de proyectos, cifras de aportación económica, identidad territorial concreta).
+- semaforo (Semáforo Emocional del Territorio): mínimo 6 indicadores distintos (p. ej. seguridad, economía/empleo, servicios públicos, movilidad, salud, educación, obra pública, percepción de gobierno local).
+- govSemaforo (Percepción del Gobierno en Turno): mínimo 6 indicadores de desempeño distintos y específicos (p. ej. seguridad pública, manejo del agua, vialidad/movilidad, transparencia, atención ciudadana, obra pública, economía local, salud), cada uno con su propio "estado" — NO los agrupes en un solo indicador genérico de "Desempeño del gobierno".
+- temasChart (Emociones por Temática): mínimo 5 temas distintos.
+- gestionPrioridad (Prioridad de Gestión Emocional): mínimo 4 elementos.`,
+
+  tensiones: `
+REQUISITOS MÍNIMOS DE CANTIDAD (TENSIONES) — no entregues menos de esto:
+- ranking: mínimo 6 tensiones sociales distintas, cada una con emocion/narrativa/actor/territorio/politica/recomendacion completos (no "—").
+- emociones: mínimo 5.
+- narrativas: mínimo 5, cada una con "frase" textual representativa.
+- territorios: mínimo 4 territorios/zonas con "observaciones" como párrafo completo.
+- riesgos: mínimo 4, cada uno con "accion" como recomendación concreta y accionable.
+- trayectoria: mínimo 4 tensiones con su evolución t3/t2/t1/actual.
+- alertas: mínimo 3, cada una con mínimo 3 "rows".`,
+
+  opositor: `
+REQUISITOS MÍNIMOS DE CANTIDAD (OPOSITOR) — no entregues menos de esto:
+- vulnerabilidades: mínimo 4, con mínimo 3 bullets cada una.
+- fortalezas: mínimo 3.
+- perfil.cronologia: mínimo 5 eventos cronológicos relevantes.
+- perfil.ierPorCargo: mínimo 3 cargos evaluados.
+- contradicciones.ranking: mínimo 4. contradicciones.destacados: mínimo 3. contradicciones.tabla: mínimo 5 filas.
+- vectoresAtaque: mínimo 4, cada uno con mínimo 2 "evidencias".
+- redDePoder.alertas: mínimo 3. redDePoder.tabla: mínimo 5 actores vinculados.`,
+};
 
 function resumirFuentes(bloque) {
   if (!bloque || !bloque.items || bloque.items.length === 0) {
     return '(No se obtuvieron resultados directos de scraping en vivo; genera el análisis basándote en conocimiento experto del contexto político mexicano respetando estrictamente el esquema JSON proporcionado.)';
   }
   return bloque.items
-    .slice(0, 50)
-    .map(i => `[${i.fuente}] ${i.texto.slice(0, 200)}`)
+    .slice(0, 90)
+    .map(i => `[${i.fuente}] ${i.texto.slice(0, 280)}`)
     .join('\n');
 }
 
@@ -588,7 +682,7 @@ async function callOpenRouter({ system, user }, apiKey) {
         { role: 'user', content: user },
       ],
       temperature: 0.3,
-      max_tokens: 8000,
+      max_tokens: 16000,
       response_format: { type: 'json_object' },
     }),
   });
